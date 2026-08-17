@@ -526,6 +526,31 @@ function bindGenre(currentGenres) {
   input.onfocus = () => { if (input.value.trim()) input.oninput(); };
 }
 
+/**
+ * Insert a genre directly after the last item of the `approved:` block.
+ *
+ * Not simply "before `banned:`" — the comment block above `banned:` would then
+ * sit in the middle of the approved list, and every new genre would stack up
+ * after it. YAML tolerates that, but the file becomes unreadable.
+ * Returns null if the file does not look like we expect, so we never guess.
+ */
+function appendApproved(text, genre) {
+  const lines = text.split('\n');
+  const start = lines.findIndex((l) => /^approved:\s*$/.test(l));
+  if (start === -1) return null;
+
+  let last = -1;
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^[A-Za-z_][\w-]*:/.test(lines[i])) break;   // next top-level key
+    if (/^\s*-\s+/.test(lines[i])) last = i;
+  }
+  if (last === -1) return null;
+
+  const indent = (lines[last].match(/^\s*/) || [''])[0];
+  lines.splice(last + 1, 0, `${indent}- ${genre}`);
+  return lines.join('\n');
+}
+
 async function applyGenre(genre, isNew) {
   const film = current.film;
   if (isNew && !confirm(
@@ -542,11 +567,14 @@ async function applyGenre(genre, isNew) {
 
     if (isNew) {
       const g = await readFile('genres.yml');
-      if (!new RegExp(`^\\s*-\\s+${genre.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'm').test(g.text)) {
-        // Append into the approved block, before the `banned:` key.
-        const next = g.text.replace(/^banned:/m, `  - ${genre}\n\nbanned:`);
-        await writeFile('genres.yml', next, `Approve genre: ${genre}`);
-        state.approved = [...state.approved, genre].sort();
+      const already = new RegExp(
+        `^\\s*-\\s+${genre.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'm').test(g.text);
+      if (!already) {
+        const next = appendApproved(g.text, genre);
+        if (next) {
+          await writeFile('genres.yml', next, `Approve genre: ${genre}`);
+          state.approved = [...state.approved, genre].sort();
+        }
       }
     }
   });
