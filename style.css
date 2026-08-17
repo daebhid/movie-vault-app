@@ -133,10 +133,14 @@ button:disabled { opacity: .5; }
 }
 .sheet-head h2 { flex: 1; margin: 0; font-size: 16px; font-weight: 600;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sheet-body { padding: 14px; }
+/* Full width on a phone; capped on a desktop so text stays readable. */
+.sheet-body { padding: 14px; max-width: 760px; margin: 0 auto; }
 
-.hero { display: flex; gap: 14px; margin-bottom: 18px; }
+/* align-items must not be `stretch`: the poster would be pulled to the height of
+   the metadata column, overriding its aspect-ratio and cropping it to a sliver. */
+.hero { display: flex; gap: 14px; margin-bottom: 18px; align-items: flex-start; }
 .hero .poster { width: 116px; flex: 0 0 116px; }
+@media (min-width: 700px) { .hero .poster { width: 170px; flex: 0 0 170px; } }
 .hero-meta { min-width: 0; }
 .hero-meta h1 { margin: 0 0 3px; font-size: 20px; line-height: 1.2; }
 .hero-meta .sub { color: var(--muted); font-size: 13px; margin-bottom: 8px; }

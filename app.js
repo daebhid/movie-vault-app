@@ -165,19 +165,36 @@ async function posterBlob(filename) {
   }
 }
 
+/**
+ * One object URL per poster, kept for the life of the page.
+ *
+ * These must NOT be revoked once the <img> has loaded. The browser is free to
+ * discard the decoded bitmap of an off-screen image and re-read it from its
+ * src; if the src has been revoked by then the poster silently disappears and
+ * has to be fetched again every time you scroll back. Holding the URL also
+ * makes re-rendering the grid free, since the same src is reused.
+ */
+const posterURLs = new Map();
+
+async function posterURL(filename) {
+  const existing = posterURLs.get(filename);
+  if (existing) return existing;
+  const url = URL.createObjectURL(await posterBlob(filename));
+  posterURLs.set(filename, url);
+  return url;
+}
+
 const posterObserver = new IntersectionObserver(async (entries) => {
   for (const entry of entries) {
     if (!entry.isIntersecting) continue;
     const holder = entry.target;
     posterObserver.unobserve(holder);
     const file = holder.dataset.poster;
-    if (!file) continue;
+    if (!file || holder.querySelector('img')) continue;
     try {
-      const url = URL.createObjectURL(await posterBlob(file));
       const img = new Image();
-      img.onload = () => URL.revokeObjectURL(url);
-      img.src = url;
       img.alt = '';
+      img.src = await posterURL(file);
       holder.querySelector('.fallback')?.remove();
       holder.prepend(img);
     } catch { /* leave the title fallback showing */ }
