@@ -662,6 +662,7 @@ async function submitNewFilm() {
     value('plot') ? `plot: ${yamlValue(value('plot'))}` : 'plot: null',
   ].join('\n');
 
+  const hadPoster = !!posterUpload;
   const ok = await save('Adding film', async () => {
     await writeFile(`movies/${slug}.md`, joinFile(fm, ''), `Add ${title}`, { isNew: true });
     if (posterUpload) {
@@ -671,12 +672,20 @@ async function submitNewFilm() {
   });
 
   if (ok) {
+    // Read everything off the form BEFORE clearing it, or the new card in the
+    // gallery loses its poster and year.
+    const added = {
+      slug, title,
+      release_year: parseInt(value('release_year'), 10) || undefined,
+      genres: genre ? [genre] : [],
+      watchlists: [], rating: null,
+      poster: hadPoster ? `${slug}.jpg` : undefined,
+      formats,
+    };
     toast(`Added ${title}`, 'good');
     el('addfilm').hidden = true;
     posterUpload = null;
-    state.films.push({ slug, title, release_year: parseInt(value('release_year'), 10) || undefined,
-      genres: genre ? [genre] : [], watchlists: [], rating: null,
-      poster: posterUpload ? `${slug}.jpg` : undefined, formats });
+    state.films.push(added);
     state.films.sort((a, b) => a.slug.localeCompare(b.slug));
     renderGrid();
   }
