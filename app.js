@@ -340,6 +340,16 @@ function renderStars(container, value, onPick) {
 
 let current = null;   // { film, text, body }
 
+/**
+ * Record a successful write against the open sheet. The sheet may have been
+ * closed — or moved on to another film — while the save was in flight. The
+ * commit has already landed by that point, so a stale sheet is bookkeeping to
+ * skip, never a failure to report.
+ */
+function noteSaved(film, updated) {
+  if (current && current.film === film) current.text = updated;
+}
+
 async function openDetail(slug) {
   const film = state.films.find((f) => f.slug === slug);
   if (!film) return;
@@ -369,6 +379,7 @@ function closeDetail() {
 }
 
 function renderDetail() {
+  if (!current) return;          // sheet closed while a save was in flight
   const { film, text, body } = current;
   const fm = splitFile(text).fm;
   const genres = getList(fm, 'genres');
@@ -443,7 +454,7 @@ function renderDetail() {
       const fresh = (await readFile(`movies/${film.slug}.md`)).text;
       const updated = setBody(fresh, value.trim() ? value.trim() + '\n' : '');
       await writeFile(`movies/${film.slug}.md`, updated, `Update review for ${film.title}`);
-      current.text = updated;
+      noteSaved(film, updated);
       film.has_review = !!value.trim();
     });
   };
@@ -460,7 +471,7 @@ function bindStars(box, film) {
       const updated = joinFile(setScalar(parts.fm, 'rating', value === null ? 'null' : value), parts.body);
       await writeFile(`movies/${film.slug}.md`, updated,
         value === null ? `Clear rating for ${film.title}` : `Rate ${film.title} ${value}/5`);
-      current.text = updated;
+      noteSaved(film, updated);
     });
     if (!ok) { film.rating = before; bindStars(box, film); }
   });
@@ -479,7 +490,7 @@ async function toggleWatchlist(name, btn) {
     const updated = joinFile(setList(parts.fm, 'watchlists', next), parts.body);
     await writeFile(path, updated,
       on ? `Remove ${film.title} from ${name}` : `Add ${film.title} to ${name}`);
-    current.text = updated;
+    noteSaved(film, updated);
     film.watchlists = next;
   });
   if (!ok) btn?.classList.toggle('on');
@@ -562,7 +573,7 @@ async function applyGenre(genre, isNew) {
     const parts = splitFile(fresh);
     const updated = joinFile(setList(parts.fm, 'genres', [genre]), parts.body);
     await writeFile(path, updated, `Set genre of ${film.title} to ${genre}`);
-    current.text = updated;
+    noteSaved(film, updated);
     film.genres = [genre];
 
     if (isNew) {
