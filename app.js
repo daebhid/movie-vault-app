@@ -423,6 +423,8 @@ function renderDetail() {
       </div>
       ${genres.length > 1 ? '<p class="hint">Multiple genres — picking one replaces them all.</p>' : ''}
       ${genres.some((g) => state.banned.includes(g)) ? '<p class="hint error">Contains a banned genre.</p>' : ''}
+      ${state.approved.length ? `<p class="hint approved-list">${state.approved.map((g) =>
+        genres.includes(g) ? `<b>${escapeHtml(g)}</b>` : escapeHtml(g)).join(' · ')}</p>` : ''}
     </div>
 
     ${film.plot ? `<div class="field"><h4>Plot</h4><p class="muted">${escapeHtml(film.plot)}</p></div>` : ''}

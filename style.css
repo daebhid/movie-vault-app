@@ -203,3 +203,9 @@ button:disabled { opacity: .5; }
 }
 .toast.bad { border-color: var(--danger); color: var(--danger); }
 .toast.good { border-color: var(--ok); }
+
+/* The full approved list under the genre box — a reminder of what exists, so
+   the vocabulary does not have to be held in your head. The film's own genre
+   is bolded so it can be picked out of the run of text at a glance. */
+.approved-list { line-height: 1.7; }
+.approved-list b { color: var(--text); font-weight: 600; }
