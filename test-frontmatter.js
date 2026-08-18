@@ -90,6 +90,44 @@ for (const file of files) {
     if (!/^watchlists: \[\]$/m.test(fm2)) fail(file, 'empty list not written as []');
   }
 
+  // 7. Copies: setting one copy's location changes exactly that one line, and
+  //    every other copy must survive byte-identical. This is the case that
+  //    matters for the films holding two discs in different places.
+  {
+    const copies = FM.getCopies(parts.fm);
+    if (copies.length) {
+      const i = copies.length - 1;
+      const target = copies[i].shelf_location === 'Shelf' ? 'Flight Case' : 'Shelf';
+      const fm2 = FM.setCopyField(parts.fm, i, 'shelf_location', target);
+      const after = FM.getCopies(fm2);
+
+      if (after.length !== copies.length) fail(file, 'setCopyField changed the number of copies');
+      if (after[i].shelf_location !== target) fail(file, 'copy location did not read back');
+      for (let j = 0; j < copies.length; j++) {
+        if (j !== i && JSON.stringify(after[j]) !== JSON.stringify(copies[j])) {
+          fail(file, `setCopyField disturbed copy ${j}`);
+        }
+      }
+      if (after[i].format !== copies[i].format) fail(file, 'setCopyField changed the format');
+      if (after[i].distributor !== copies[i].distributor) fail(file, 'setCopyField changed the distributor');
+
+      const { removed, added } = lineDiff(original, FM.joinFile(fm2, parts.body));
+      const allowed = (l) => /^\s*shelf_location:/.test(l);
+      if (!added.every(allowed) || !removed.every(allowed)) {
+        fail(file, `copy location touched other lines: -${JSON.stringify(removed)} +${JSON.stringify(added)}`);
+      }
+    }
+  }
+
+  // 8. Clearing a copy's location must write null, not an empty value.
+  {
+    if (FM.getCopies(parts.fm).length) {
+      const fm2 = FM.setCopyField(parts.fm, 0, 'shelf_location', null);
+      if (FM.getCopies(fm2)[0].shelf_location !== null) fail(file, 'clearing location did not read back as null');
+      if (!/^\s+shelf_location: null$/m.test(fm2)) fail(file, 'cleared location not written as null');
+    }
+  }
+
   // 7. Review body: frontmatter must be untouched.
   {
     const out = FM.setBody(original, 'A new review.');
@@ -98,7 +136,7 @@ for (const file of files) {
   }
 }
 
-// 8. Values needing quotes.
+// 9. Values needing quotes.
 const q = FM.yamlValue;
 const quoteCases = [
   ['Coming of Age', 'Coming of Age'], ['Science Fiction', 'Science Fiction'],

@@ -84,13 +84,80 @@
     return [];
   }
 
+  /**
+   * The `copies:` block is the one nested structure in these files, so the flat
+   * helpers above cannot reach into it. Everything below works on the line
+   * ranges of each copy, so editing one field leaves the rest byte-identical.
+   *
+   *   copies:
+   *   - format: Blu-ray        <- range starts
+   *     distributor: Eureka
+   *     shelf_location: Shelf  <- range ends
+   */
+  function copyRanges(fm) {
+    const lines = fm.split('\n');
+    const ranges = [];
+    let inBlock = false;
+    for (let i = 0; i < lines.length; i++) {
+      if (!inBlock) {
+        if (/^copies:\s*$/.test(lines[i])) inBlock = true;   // `copies: []` has none
+        continue;
+      }
+      if (/^-\s+\S+:/.test(lines[i])) { ranges.push([i, i + 1]); continue; }
+      if (/^\s+\S+:/.test(lines[i]) && ranges.length) { ranges[ranges.length - 1][1] = i + 1; continue; }
+      break;                                                 // next top-level key
+    }
+    return { lines, ranges };
+  }
+
+  const unquote = (s) => {
+    const v = s.trim();
+    if (v === 'null' || v === '~' || v === '') return null;
+    return v.replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1');
+  };
+
+  /** Read the copies block as an array of plain field objects. */
+  function getCopies(fm) {
+    const { lines, ranges } = copyRanges(fm);
+    return ranges.map(([a, b]) => {
+      const fields = {};
+      for (let i = a; i < b; i++) {
+        const m = lines[i].match(/^(?:-\s+|\s+)(\S+):\s*(.*)$/);
+        if (m) fields[m[1]] = unquote(m[2]);
+      }
+      return fields;
+    });
+  }
+
+  /**
+   * Set one field on one copy, in place. Writes `null` for an empty value, and
+   * inserts the key if that copy does not carry it yet.
+   */
+  function setCopyField(fm, index, key, value) {
+    const { lines, ranges } = copyRanges(fm);
+    const range = ranges[index];
+    if (!range) return fm;
+    const [a, b] = range;
+    const rendered = (value === null || value === undefined || value === '') ? 'null' : yamlValue(value);
+    for (let i = a; i < b; i++) {
+      const m = lines[i].match(/^(-\s+|\s+)(\S+):/);
+      if (m && m[2] === key) {
+        lines[i] = `${m[1]}${key}: ${rendered}`;
+        return lines.join('\n');
+      }
+    }
+    lines.splice(a + 1, 0, `  ${key}: ${rendered}`);
+    return lines.join('\n');
+  }
+
   /** Replace the review body, leaving the frontmatter untouched. */
   function setBody(text, body) {
     const { fm } = splitFile(text);
     return joinFile(fm, body.replace(/\r\n/g, '\n'));
   }
 
-  const api = { splitFile, joinFile, yamlValue, setScalar, setList, getList, setBody };
+  const api = { splitFile, joinFile, yamlValue, setScalar, setList, getList, setBody,
+                getCopies, setCopyField };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.FM = api;
 })(typeof self !== 'undefined' ? self : this);

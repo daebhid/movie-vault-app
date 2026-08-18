@@ -19,7 +19,7 @@ const LS = { owner: 'mv_owner', repo: 'mv_repo', token: 'mv_token' };
 const state = {
   owner: '', repo: '', token: '',
   films: [], approved: [], banned: [],
-  filters: { q: '', genre: '', watchlist: '', decade: '', rating: '', format: '', location: '' },
+  filters: { q: '', genre: '', watchlist: '', decade: '', rating: '', format: '', location: '', distributor: '' },
   filtersOpen: false,
 };
 
@@ -142,7 +142,8 @@ async function save(label, fn) {
 
 /* ── Surgical frontmatter editing (see frontmatter.js) ────────────── */
 
-const { splitFile, joinFile, yamlValue, setScalar, setList, getList, setBody } = FM;
+const { splitFile, joinFile, yamlValue, setScalar, setList, getList, setBody,
+        getCopies, setCopyField } = FM;
 
 /* ── Posters ──────────────────────────────────────────────────────────── */
 
@@ -228,6 +229,7 @@ function visibleFilms() {
     if (f.watchlist && !(m.watchlists || []).includes(f.watchlist)) return false;
     if (f.format && !(m.formats || []).includes(f.format)) return false;
     if (f.location && !(m.locations || []).includes(f.location)) return false;
+    if (f.distributor && !(m.distributors || []).includes(f.distributor)) return false;
     if (f.decade && String(decadeOf(m)) !== f.decade) return false;
     if (f.rating === 'unrated' && m.rating != null) return false;
     if (f.rating && f.rating !== 'unrated' && ratingStr(m.rating) !== f.rating) return false;
@@ -255,6 +257,7 @@ function renderFilters() {
     ['Genre', 'genre', uniqueValues('genres')],
     ['Format', 'format', uniqueValues('formats')],
     ['Location', 'location', uniqueValues('locations')],
+    ['Distributor', 'distributor', uniqueValues('distributors')],
     ['Decade', 'decade', decades.map(String)],
     ['Rating', 'rating', ratings],
   ];
@@ -387,12 +390,14 @@ function renderDetail() {
   const genres = getList(fm, 'genres');
   const watchlists = getList(fm, 'watchlists');
   const allLists = uniqueValues('watchlists');
+  const copies = getCopies(fm);
+  const allLocations = [...new Set([...uniqueValues('locations'),
+    ...copies.map((c) => c.shelf_location).filter(Boolean)])].sort();
 
   const meta = [
     ['Director', film.director], ['Photography', film.photography],
     ['Writer', film.writer], ['Cast', (film.actors || []).slice(0, 6)],
     ['Country', film.country ? [film.country] : []], ['Language', film.language ? [film.language] : []],
-    ['Formats', film.formats], ['Location', film.locations],
   ].filter(([, v]) => v && v.length);
 
   el('detail').querySelector('.sheet-body').innerHTML = `
@@ -408,6 +413,18 @@ function renderDetail() {
     </div>
 
     <div class="field"><h4>Rating</h4><div id="d-stars"></div></div>
+
+    <div class="field"><h4>Copies</h4>
+      ${copies.length ? copies.map((c, i) => `
+        <div class="copy">
+          <div class="copy-what">${escapeHtml(c.format || 'Copy')}${
+            c.distributor ? ` · <span class="muted">${escapeHtml(c.distributor)}</span>` : ''}</div>
+          <div class="chips" data-copy="${i}">
+            ${allLocations.map((l) => `<button class="chip ${c.shelf_location === l ? 'on' : ''}"
+                data-loc="${escapeHtml(l)}">${escapeHtml(l)}</button>`).join('')}
+          </div>
+        </div>`).join('') : '<p class="hint">No copies recorded.</p>'}
+    </div>
 
     <div class="field"><h4>Watchlists</h4>
       <div class="chips" id="d-lists">
@@ -450,6 +467,12 @@ function renderDetail() {
     if (name && name.trim()) toggleWatchlist(name.trim(), null);
   };
 
+  el('detail').querySelectorAll('[data-copy]').forEach((row) => {
+    row.querySelectorAll('[data-loc]').forEach((btn) => {
+      btn.onclick = () => setCopyLocation(Number(row.dataset.copy), btn.dataset.loc);
+    });
+  });
+
   bindGenre(genres);
 
   el('d-save-body').onclick = async () => {
@@ -479,6 +502,28 @@ function bindStars(box, film) {
     });
     if (!ok) { film.rating = before; bindStars(box, film); }
   });
+}
+
+/**
+ * Set where one copy lives. Per copy rather than per film because seven films
+ * genuinely have copies in two places — a single control would flatten them.
+ */
+async function setCopyLocation(index, value) {
+  const film = current.film;
+  const path = `movies/${film.slug}.md`;
+  const ok = await save('Location', async () => {
+    const fresh = (await readFile(path)).text;
+    const parts = splitFile(fresh);
+    const was = getCopies(parts.fm)[index] || {};
+    const next = was.shelf_location === value ? null : value;   // tapping again clears
+    const updated = joinFile(setCopyField(parts.fm, index, 'shelf_location', next), parts.body);
+    await writeFile(path, updated,
+      next ? `Move ${film.title} to ${next}` : `Clear location for ${film.title}`);
+    noteSaved(film, updated);
+    film.locations = [...new Set(getCopies(splitFile(updated).fm)
+      .map((c) => c.shelf_location).filter(Boolean))];
+  });
+  if (ok) renderDetail();
 }
 
 async function toggleWatchlist(name, btn) {

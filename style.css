@@ -209,3 +209,8 @@ button:disabled { opacity: .5; }
    is bolded so it can be picked out of the run of text at a glance. */
 .approved-list { line-height: 1.7; }
 .approved-list b { color: var(--text); font-weight: 600; }
+
+/* One row per physical disc: what it is, and where it lives. */
+.copy { padding: 8px 0; border-bottom: 1px solid var(--line); }
+.copy:last-child { border-bottom: 0; }
+.copy-what { font-size: 13px; margin-bottom: 6px; }
