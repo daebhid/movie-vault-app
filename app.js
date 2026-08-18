@@ -19,7 +19,7 @@ const LS = { owner: 'mv_owner', repo: 'mv_repo', token: 'mv_token' };
 const state = {
   owner: '', repo: '', token: '',
   films: [], approved: [], banned: [],
-  filters: { q: '', genre: '', watchlist: '', decade: '', rating: '', format: '' },
+  filters: { q: '', genre: '', watchlist: '', decade: '', rating: '', format: '', location: '' },
   filtersOpen: false,
 };
 
@@ -227,6 +227,7 @@ function visibleFilms() {
     if (f.genre && !(m.genres || []).includes(f.genre)) return false;
     if (f.watchlist && !(m.watchlists || []).includes(f.watchlist)) return false;
     if (f.format && !(m.formats || []).includes(f.format)) return false;
+    if (f.location && !(m.locations || []).includes(f.location)) return false;
     if (f.decade && String(decadeOf(m)) !== f.decade) return false;
     if (f.rating === 'unrated' && m.rating != null) return false;
     if (f.rating && f.rating !== 'unrated' && ratingStr(m.rating) !== f.rating) return false;
@@ -253,6 +254,7 @@ function renderFilters() {
     ['Watchlist', 'watchlist', uniqueValues('watchlists')],
     ['Genre', 'genre', uniqueValues('genres')],
     ['Format', 'format', uniqueValues('formats')],
+    ['Location', 'location', uniqueValues('locations')],
     ['Decade', 'decade', decades.map(String)],
     ['Rating', 'rating', ratings],
   ];
@@ -390,7 +392,7 @@ function renderDetail() {
     ['Director', film.director], ['Photography', film.photography],
     ['Writer', film.writer], ['Cast', (film.actors || []).slice(0, 6)],
     ['Country', film.country ? [film.country] : []], ['Language', film.language ? [film.language] : []],
-    ['Formats', film.formats],
+    ['Formats', film.formats], ['Location', film.locations],
   ].filter(([, v]) => v && v.length);
 
   el('detail').querySelector('.sheet-body').innerHTML = `
@@ -632,6 +634,14 @@ function openAdd() {
         </div>
       </div>
 
+      <div class="field"><label>Location</label>
+        <div class="chips" id="a-location">
+          ${(uniqueValues('locations').length ? uniqueValues('locations') : ['Shelf', 'Flight Case'])
+            .map((l) => `<button type="button" class="chip" data-l="${escapeHtml(l)}">${escapeHtml(l)}</button>`).join('')}
+        </div>
+        <p class="hint">Where the disc lives. Applies to every copy above.</p>
+      </div>
+
       <div class="field"><label for="a-poster">Poster</label>
         <input id="a-poster" type="file" accept="image/*">
         <p class="hint">Shrunk to 500px wide automatically, whatever you upload.</p>
@@ -653,6 +663,13 @@ function openAdd() {
   };
   sheet.querySelectorAll('#a-formats .chip').forEach((c) => {
     c.onclick = () => c.classList.toggle('on');
+  });
+  sheet.querySelectorAll('#a-location .chip').forEach((c) => {
+    c.onclick = () => {                       // one place only, so this is a radio
+      const wasOn = c.classList.contains('on');
+      sheet.querySelectorAll('#a-location .chip').forEach((o) => o.classList.remove('on'));
+      c.classList.toggle('on', !wasOn);
+    };
   });
   el('a-poster').onchange = handlePosterPick;
   el('a-save').onclick = submitNewFilm;
@@ -693,6 +710,7 @@ async function submitNewFilm() {
 
   const listOf = (k) => value(k).split(',').map((s) => s.trim()).filter(Boolean);
   const formats = [...el('a-formats').querySelectorAll('.chip.on')].map((c) => c.dataset.f);
+  const location = el('a-location').querySelector('.chip.on')?.dataset.l || '';
   const genre = value('genres');
   if (genre && state.banned.includes(genre)) return toast(`“${genre}” is banned`, 'bad');
 
@@ -710,7 +728,7 @@ async function submitNewFilm() {
     line('country', value('country')),
     line('language', value('language')),
     formats.length
-      ? `copies:\n${formats.map((f) => `- format: ${f}\n  distributor: null\n  shelf_location: null`).join('\n')}`
+      ? `copies:\n${formats.map((f) => `- format: ${f}\n  distributor: null\n  shelf_location: ${location ? yamlValue(location) : 'null'}`).join('\n')}`
       : 'copies: []',
     'tags: []',
     'watchlists: []',
