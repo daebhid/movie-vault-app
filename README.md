@@ -34,6 +34,14 @@ to guess.
 | `app.js` | Everything else: API, gallery, filters, editors |
 | `test-frontmatter.js` | Runs the editors over every real film |
 
+## Films and series
+
+A record's `category:` is `film` or `tv`. A film owns a `copies:` block; a
+series owns `seasons:` instead, one entry per season with its own format and
+shelf location. Both blocks have the same shape, so the same nested-block
+editor drives them — `getCopies` and `setCopyField` take the block name, and
+the detail sheet only swaps the heading and the row label.
+
 ## Editing rule
 
 `frontmatter.js` never parses YAML into an object and writes it back out. Doing

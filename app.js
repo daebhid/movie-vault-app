@@ -390,7 +390,11 @@ function renderDetail() {
   const genres = getList(fm, 'genres');
   const watchlists = getList(fm, 'watchlists');
   const allLists = uniqueValues('watchlists');
-  const copies = getCopies(fm);
+  // A series owns seasons where a film owns copies. Same block shape, so the
+  // same editor drives both — only the heading and the row label differ.
+  const isSeries = film.category === 'tv';
+  const block = isSeries ? 'seasons' : 'copies';
+  const copies = getCopies(fm, block);
   const allLocations = [...new Set([...uniqueValues('locations'),
     ...copies.map((c) => c.shelf_location).filter(Boolean)])].sort();
 
@@ -414,16 +418,18 @@ function renderDetail() {
 
     <div class="field"><h4>Rating</h4><div id="d-stars"></div></div>
 
-    <div class="field"><h4>Copies</h4>
+    <div class="field"><h4>${isSeries ? 'Seasons' : 'Copies'}</h4>
       ${copies.length ? copies.map((c, i) => `
         <div class="copy">
-          <div class="copy-what">${escapeHtml(c.format || 'Copy')}${
+          <div class="copy-what">${escapeHtml(
+            isSeries ? `Season ${c.season ?? i + 1}${c.format ? ` · ${c.format}` : ''}`
+                     : (c.format || 'Copy'))}${
             c.distributor ? ` · <span class="muted">${escapeHtml(c.distributor)}</span>` : ''}</div>
           <div class="chips" data-copy="${i}">
             ${allLocations.map((l) => `<button class="chip ${c.shelf_location === l ? 'on' : ''}"
                 data-loc="${escapeHtml(l)}">${escapeHtml(l)}</button>`).join('')}
           </div>
-        </div>`).join('') : '<p class="hint">No copies recorded.</p>'}
+        </div>`).join('') : `<p class="hint">No ${isSeries ? 'seasons' : 'copies'} recorded.</p>`}
     </div>
 
     <div class="field"><h4>Watchlists</h4>
@@ -469,7 +475,7 @@ function renderDetail() {
 
   el('detail').querySelectorAll('[data-copy]').forEach((row) => {
     row.querySelectorAll('[data-loc]').forEach((btn) => {
-      btn.onclick = () => setCopyLocation(Number(row.dataset.copy), btn.dataset.loc);
+      btn.onclick = () => setCopyLocation(Number(row.dataset.copy), btn.dataset.loc, block);
     });
   });
 
@@ -505,22 +511,24 @@ function bindStars(box, film) {
 }
 
 /**
- * Set where one copy lives. Per copy rather than per film because seven films
- * genuinely have copies in two places — a single control would flatten them.
+ * Set where one copy — or one season of a series — lives. Per entry rather than
+ * per film because seven films genuinely have copies in two places, and a boxed
+ * season can sit apart from the rest; a single control would flatten both.
  */
-async function setCopyLocation(index, value) {
+async function setCopyLocation(index, value, block = 'copies') {
   const film = current.film;
   const path = `movies/${film.slug}.md`;
   const ok = await save('Location', async () => {
     const fresh = (await readFile(path)).text;
     const parts = splitFile(fresh);
-    const was = getCopies(parts.fm)[index] || {};
+    const was = getCopies(parts.fm, block)[index] || {};
     const next = was.shelf_location === value ? null : value;   // tapping again clears
-    const updated = joinFile(setCopyField(parts.fm, index, 'shelf_location', next), parts.body);
+    const updated = joinFile(
+      setCopyField(parts.fm, index, 'shelf_location', next, block), parts.body);
     await writeFile(path, updated,
       next ? `Move ${film.title} to ${next}` : `Clear location for ${film.title}`);
     noteSaved(film, updated);
-    film.locations = [...new Set(getCopies(splitFile(updated).fm)
+    film.locations = [...new Set(getCopies(splitFile(updated).fm, block)
       .map((c) => c.shelf_location).filter(Boolean))];
   });
   if (ok) renderDetail();
@@ -764,6 +772,7 @@ async function submitNewFilm() {
 
   const fm = [
     `title: ${yamlValue(title)}`,
+    'category: film',                  // series are assembled by hand, not here
     value('release_year') ? `release_year: ${parseInt(value('release_year'), 10)}` : 'release_year: null',
     block('director', listOf('director')),
     block('writer', listOf('writer')),
@@ -796,7 +805,7 @@ async function submitNewFilm() {
     // Read everything off the form BEFORE clearing it, or the new card in the
     // gallery loses its poster and year.
     const added = {
-      slug, title,
+      slug, title, category: 'film',
       release_year: parseInt(value('release_year'), 10) || undefined,
       genres: genre ? [genre] : [],
       watchlists: [], rating: null,

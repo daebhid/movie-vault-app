@@ -85,22 +85,24 @@
   }
 
   /**
-   * The `copies:` block is the one nested structure in these files, so the flat
-   * helpers above cannot reach into it. Everything below works on the line
-   * ranges of each copy, so editing one field leaves the rest byte-identical.
+   * `copies:` on a film, `seasons:` on a series, are the only nested structures
+   * in these files, so the flat helpers above cannot reach into them. Everything
+   * below works on the line ranges of each entry, so editing one field leaves
+   * the rest byte-identical. Both blocks have the same shape, hence the `key`.
    *
-   *   copies:
-   *   - format: Blu-ray        <- range starts
-   *     distributor: Eureka
-   *     shelf_location: Shelf  <- range ends
+   *   copies:                  seasons:
+   *   - format: Blu-ray        - season: 1            <- range starts
+   *     distributor: Eureka      format: Blu-ray
+   *     shelf_location: Shelf    shelf_location: Shelf  <- range ends
    */
-  function copyRanges(fm) {
+  function copyRanges(fm, key = 'copies') {
+    const head = new RegExp(`^${escapeRe(key)}:\\s*$`);
     const lines = fm.split('\n');
     const ranges = [];
     let inBlock = false;
     for (let i = 0; i < lines.length; i++) {
       if (!inBlock) {
-        if (/^copies:\s*$/.test(lines[i])) inBlock = true;   // `copies: []` has none
+        if (head.test(lines[i])) inBlock = true;             // `key: []` has none
         continue;
       }
       if (/^-\s+\S+:/.test(lines[i])) { ranges.push([i, i + 1]); continue; }
@@ -116,9 +118,9 @@
     return v.replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1');
   };
 
-  /** Read the copies block as an array of plain field objects. */
-  function getCopies(fm) {
-    const { lines, ranges } = copyRanges(fm);
+  /** Read a copies or seasons block as an array of plain field objects. */
+  function getCopies(fm, key = 'copies') {
+    const { lines, ranges } = copyRanges(fm, key);
     return ranges.map(([a, b]) => {
       const fields = {};
       for (let i = a; i < b; i++) {
@@ -130,11 +132,11 @@
   }
 
   /**
-   * Set one field on one copy, in place. Writes `null` for an empty value, and
-   * inserts the key if that copy does not carry it yet.
+   * Set one field on one copy or season, in place. Writes `null` for an empty
+   * value, and inserts the field if that entry does not carry it yet.
    */
-  function setCopyField(fm, index, key, value) {
-    const { lines, ranges } = copyRanges(fm);
+  function setCopyField(fm, index, key, value, block = 'copies') {
+    const { lines, ranges } = copyRanges(fm, block);
     const range = ranges[index];
     if (!range) return fm;
     const [a, b] = range;
