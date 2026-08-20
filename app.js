@@ -19,7 +19,8 @@ const LS = { owner: 'mv_owner', repo: 'mv_repo', token: 'mv_token' };
 const state = {
   owner: '', repo: '', token: '',
   films: [], approved: [], banned: [],
-  filters: { q: '', genre: '', watchlist: '', decade: '', rating: '', format: '', location: '', distributor: '' },
+  filters: { q: '', genre: '', watchlist: '', decade: '', rating: '', format: '', location: '',
+             distributor: '', person: '', country: '', language: '' },
   filtersOpen: false,
 };
 
@@ -214,6 +215,10 @@ async function loadCatalogue() {
 
 /* ── Filtering ────────────────────────────────────────────────────────── */
 
+// The four credited roles. A person filter matches across all of them: tapping a
+// name asks "what else of theirs do I own", not "what else did they direct".
+const CREDIT_KEYS = ['director', 'writer', 'photography', 'actors'];
+
 const decadeOf = (f) => (Number.isInteger(f.release_year) ? Math.floor(f.release_year / 10) * 10 : null);
 const ratingStr = (r) => (r === null || r === undefined ? '' : (Number.isInteger(r) ? String(r) : String(r)));
 
@@ -230,6 +235,9 @@ function visibleFilms() {
     if (f.format && !(m.formats || []).includes(f.format)) return false;
     if (f.location && !(m.locations || []).includes(f.location)) return false;
     if (f.distributor && !(m.distributors || []).includes(f.distributor)) return false;
+    if (f.person && !CREDIT_KEYS.some((k) => (m[k] || []).includes(f.person))) return false;
+    if (f.country && m.country !== f.country) return false;
+    if (f.language && m.language !== f.language) return false;
     if (f.decade && String(decadeOf(m)) !== f.decade) return false;
     if (f.rating === 'unrated' && m.rating != null) return false;
     if (f.rating && f.rating !== 'unrated' && ratingStr(m.rating) !== f.rating) return false;
@@ -241,6 +249,29 @@ function uniqueValues(key) {
   const set = new Set();
   for (const m of state.films) for (const v of (m[key] || [])) set.add(v);
   return [...set].sort();
+}
+
+/** The same, for the fields a film holds one of rather than a list of. */
+function uniqueScalars(key) {
+  const set = new Set();
+  for (const m of state.films) if (m[key]) set.add(m[key]);
+  return [...set].sort();
+}
+
+/** How many films a credit, country or language accounts for. Drives whether a
+ *  name in the detail sheet is offered as a link at all. */
+function filterCount(key, value) {
+  return state.films.filter((m) => (key === 'person'
+    ? CREDIT_KEYS.some((k) => (m[k] || []).includes(value))
+    : m[key] === value)).length;
+}
+
+/** Every filter change goes through here, so the three views never drift apart. */
+function setFilter(key, value) {
+  state.filters[key] = state.filters[key] === value ? '' : value;
+  renderFilters();
+  renderActive();
+  renderGrid();
 }
 
 /* ── Library rendering ────────────────────────────────────────────────── */
@@ -258,6 +289,8 @@ function renderFilters() {
     ['Format', 'format', uniqueValues('formats')],
     ['Location', 'location', uniqueValues('locations')],
     ['Distributor', 'distributor', uniqueValues('distributors')],
+    ['Country', 'country', uniqueScalars('country')],
+    ['Language', 'language', uniqueScalars('language')],
     ['Decade', 'decade', decades.map(String)],
     ['Rating', 'rating', ratings],
   ];
@@ -275,12 +308,37 @@ function renderFilters() {
     </div>`).join('');
 
   box.querySelectorAll('.chip').forEach((chip) => {
-    chip.onclick = () => {
-      const { key, val } = chip.dataset;
-      state.filters[key] = state.filters[key] === val ? '' : val;
-      renderFilters();
-      renderGrid();
-    };
+    chip.onclick = () => setFilter(chip.dataset.key, chip.dataset.val);
+  });
+}
+
+/* The filter panel is collapsed most of the time, so an active filter chosen
+ * inside it would otherwise be invisible. These pills state what is being
+ * filtered on and are the only way to clear a person, who has no chip. */
+const FILTER_LABELS = {
+  watchlist: 'Watchlist', genre: 'Genre', format: 'Format', location: 'Location',
+  distributor: 'Label', decade: 'Decade', rating: 'Rating',
+  person: 'Credit', country: 'Country', language: 'Language',
+};
+
+function filterLabel(key, value) {
+  if (key === 'decade') return `${value}s`;
+  if (key === 'rating') return value === 'unrated' ? 'Unrated' : `${value} stars`;
+  return value;
+}
+
+function renderActive() {
+  const box = el('active');
+  const on = Object.entries(state.filters).filter(([k, v]) => k !== 'q' && v);
+  box.hidden = on.length === 0;
+  box.innerHTML = on.map(([k, v]) => `
+    <button class="pill" data-key="${k}">
+      <span class="pill-key">${FILTER_LABELS[k]}</span>${escapeHtml(filterLabel(k, v))}
+      <span class="pill-x">✕</span>
+    </button>`).join('');
+
+  box.querySelectorAll('.pill').forEach((pill) => {
+    pill.onclick = () => setFilter(pill.dataset.key, state.filters[pill.dataset.key]);
   });
 }
 
@@ -383,6 +441,23 @@ function closeDetail() {
   renderGrid();
 }
 
+/**
+ * Leave the film and show everything else that shares this credit. Other
+ * filters are cleared rather than intersected: the question asked is "what else
+ * of theirs do I own", and a decade or genre left on from earlier would answer
+ * it wrongly while looking like a complete answer.
+ */
+function filterByCredit(key, value) {
+  for (const k of Object.keys(state.filters)) state.filters[k] = '';
+  state.filters[key] = value;
+  el('search').value = '';
+  state.filtersOpen = false;
+  closeDetail();                      // redraws the grid against the new filter
+  renderFilters();
+  renderActive();
+  window.scrollTo(0, 0);
+}
+
 function renderDetail() {
   if (!current) return;          // sheet closed while a save was in flight
   const { film, text, body } = current;
@@ -398,11 +473,19 @@ function renderDetail() {
   const allLocations = [...new Set([...uniqueValues('locations'),
     ...copies.map((c) => c.shelf_location).filter(Boolean)])].sort();
 
+  // Every credit is a way back into the library. A value the collection holds
+  // only this once is not a link — a tap that returns the film you are already
+  // looking at reads as a broken one.
   const meta = [
-    ['Director', film.director], ['Photography', film.photography],
-    ['Writer', film.writer], ['Cast', (film.actors || []).slice(0, 6)],
-    ['Country', film.country ? [film.country] : []], ['Language', film.language ? [film.language] : []],
-  ].filter(([, v]) => v && v.length);
+    ['Director', 'person', film.director], ['Photography', 'person', film.photography],
+    ['Writer', 'person', film.writer], ['Cast', 'person', (film.actors || []).slice(0, 6)],
+    ['Country', 'country', film.country ? [film.country] : []],
+    ['Language', 'language', film.language ? [film.language] : []],
+  ].filter(([, , v]) => v && v.length);
+
+  const metaValue = (key, value) => (filterCount(key, value) > 1
+    ? `<button class="credit" data-key="${key}" data-val="${escapeHtml(value)}">${escapeHtml(value)}</button>`
+    : escapeHtml(value));
 
   el('detail').querySelector('.sheet-body').innerHTML = `
     <div class="hero">
@@ -412,7 +495,8 @@ function renderDetail() {
       <div class="hero-meta">
         <h1>${escapeHtml(film.title || film.slug)}</h1>
         <div class="sub">${film.release_year || ''}</div>
-        <dl>${meta.map(([k, v]) => `<dt>${k}</dt><dd>${escapeHtml(v.join(', '))}</dd>`).join('')}</dl>
+        <dl>${meta.map(([label, key, values]) =>
+          `<dt>${label}</dt><dd>${values.map((v) => metaValue(key, v)).join(', ')}</dd>`).join('')}</dl>
       </div>
     </div>
 
@@ -460,6 +544,11 @@ function renderDetail() {
     </div>`;
 
   el('detail').querySelectorAll('.poster[data-poster]').forEach((p) => posterObserver.observe(p));
+
+  // Credits
+  el('detail').querySelectorAll('.credit').forEach((btn) => {
+    btn.onclick = () => filterByCredit(btn.dataset.key, btn.dataset.val);
+  });
 
   // Rating
   bindStars(el('d-stars'), film);
@@ -831,6 +920,7 @@ async function start() {
     await loadCatalogue();
     status('');
     renderFilters();
+    renderActive();
     renderGrid();
   } catch (err) {
     status('');

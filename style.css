@@ -89,6 +89,26 @@ button:disabled { opacity: .5; }
 .chip.on { background: var(--accent); color: #201a08; border-color: transparent; font-weight: 600; }
 .chip.warn { border-color: var(--danger); color: var(--danger); }
 
+/* ── Active filter pills ──────────────────────────────────── */
+.active { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 0 2px; }
+.pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 9px; min-height: 32px;
+  background: var(--accent); color: #201a08; border: none;
+  border-radius: 999px; font-size: 13px; font-weight: 600;
+}
+.pill-key { font-weight: 500; opacity: .65; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+.pill-x { opacity: .55; font-size: 11px; }
+
+/* Credits in the detail sheet — tappable when the collection holds more. */
+.credit {
+  display: inline; padding: 0; min-height: 0;
+  background: none; border: none; border-radius: 0;
+  font: inherit; color: var(--accent); text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  text-underline-offset: 3px;
+}
+
 /* ── Grid ──────────────────────────────────────────────────────────────── */
 .grid {
   display: grid; gap: 10px; padding: 12px 10px 40px;
@@ -147,7 +167,7 @@ button:disabled { opacity: .5; }
 .hero-meta dl { margin: 0; font-size: 12.5px; }
 .hero-meta dt { color: var(--muted); margin-top: 6px; font-size: 11px;
   text-transform: uppercase; letter-spacing: .05em; }
-.hero-meta dd { margin: 1px 0 0; }
+.hero-meta dd { margin: 1px 0 0; line-height: 1.85; }   /* room to hit a credit */
 
 .field { margin-bottom: 20px; }
 .field > label, .field > h4 {
