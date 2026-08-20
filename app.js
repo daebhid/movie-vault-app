@@ -258,14 +258,6 @@ function uniqueScalars(key) {
   return [...set].sort();
 }
 
-/** How many films a credit, country or language accounts for. Drives whether a
- *  name in the detail sheet is offered as a link at all. */
-function filterCount(key, value) {
-  return state.films.filter((m) => (key === 'person'
-    ? CREDIT_KEYS.some((k) => (m[k] || []).includes(value))
-    : m[key] === value)).length;
-}
-
 /** Every filter change goes through here, so the three views never drift apart. */
 function setFilter(key, value) {
   state.filters[key] = state.filters[key] === value ? '' : value;
@@ -473,9 +465,9 @@ function renderDetail() {
   const allLocations = [...new Set([...uniqueValues('locations'),
     ...copies.map((c) => c.shelf_location).filter(Boolean)])].sort();
 
-  // Every credit is a way back into the library. A value the collection holds
-  // only this once is not a link — a tap that returns the film you are already
-  // looking at reads as a broken one.
+  // Every credit is a way back into the library, without exception. A name that
+  // leads only to this film still answers the question honestly, and one rule
+  // for every name beats a rule you cannot see until you know it.
   const meta = [
     ['Director', 'person', film.director], ['Photography', 'person', film.photography],
     ['Writer', 'person', film.writer], ['Cast', 'person', (film.actors || []).slice(0, 6)],
@@ -483,9 +475,8 @@ function renderDetail() {
     ['Language', 'language', film.language ? [film.language] : []],
   ].filter(([, , v]) => v && v.length);
 
-  const metaValue = (key, value) => (filterCount(key, value) > 1
-    ? `<button class="credit" data-key="${key}" data-val="${escapeHtml(value)}">${escapeHtml(value)}</button>`
-    : escapeHtml(value));
+  const metaValue = (key, value) =>
+    `<button class="credit" data-key="${key}" data-val="${escapeHtml(value)}">${escapeHtml(value)}</button>`;
 
   el('detail').querySelector('.sheet-body').innerHTML = `
     <div class="hero">
@@ -901,6 +892,15 @@ async function submitNewFilm() {
       poster: hadPoster ? `${slug}.jpg` : undefined,
       formats,
     };
+    // Mirror an index.json row exactly — omitting empties as build_index.py
+    // does — so the film is filterable now and not only after a reload.
+    for (const key of CREDIT_KEYS) {
+      const names = listOf(key);
+      if (names.length) added[key] = names;
+    }
+    if (value('country')) added.country = value('country');
+    if (value('language')) added.language = value('language');
+    if (location) added.locations = [location];
     toast(`Added ${title}`, 'good');
     el('addfilm').hidden = true;
     posterUpload = null;
