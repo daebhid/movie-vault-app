@@ -15,6 +15,7 @@
 const API = 'https://api.github.com';
 const POSTER_CACHE = 'movie-vault-posters-v1';
 const LS = { owner: 'mv_owner', repo: 'mv_repo', token: 'mv_token' };
+const LS_UNWATCHED = 'mv_random_unwatched';   // a preference, not a credential — survives sign-out
 
 const state = {
   owner: '', repo: '', token: '',
@@ -405,26 +406,67 @@ function noteSaved(film, updated) {
   if (current && current.film === film) current.text = updated;
 }
 
-async function openDetail(slug) {
+let openSeq = 0;      // bumps on every open, so a slow load can't land on a later sheet
+
+async function openDetail(slug, { random = false } = {}) {
   const film = state.films.find((f) => f.slug === slug);
   if (!film) return;
+  const seq = ++openSeq;
   const sheet = el('detail');
   sheet.hidden = false;
   sheet.scrollTop = 0;
   sheet.innerHTML = `<div class="sheet-head"><button class="icon" id="d-close">✕</button>
-    <h2>${escapeHtml(film.title || slug)}</h2></div>
+    <h2>${escapeHtml(film.title || slug)}</h2>
+    ${random ? `<label class="unwatched"><input type="checkbox" id="d-unwatched"
+        ${randomUnwatched() ? 'checked' : ''}>Unwatched</label>
+      <button class="icon" id="d-again" aria-label="Another random film">🎲</button>` : ''}</div>
     <div class="sheet-body"><p class="muted">Loading…</p></div>`;
   el('d-close').onclick = closeDetail;
+  if (random) {
+    el('d-again').onclick = pickRandom;
+    el('d-unwatched').onchange = (e) => {
+      try { localStorage.setItem(LS_UNWATCHED, e.target.checked ? '1' : ''); } catch { /* private mode */ }
+      // Ticking the box while looking at a rated film would leave it on screen
+      // as if it qualified, so move straight on to one that does.
+      if (e.target.checked && film.rating != null) pickRandom();
+    };
+  }
 
   try {
     const { text } = await readFile(`movies/${slug}.md`);
+    if (seq !== openSeq) return;      // another film was opened meanwhile
     const { body } = splitFile(text);
     current = { film, text, body };
     renderDetail();
   } catch (err) {
+    if (seq !== openSeq) return;
     sheet.querySelector('.sheet-body').innerHTML =
       `<p class="error">Could not open this film — ${escapeHtml(err.message)}</p>`;
   }
+}
+
+/* ── Random pick ──────────────────────────────────────────────────────── */
+
+// "Unwatched" means unrated: a rating is the one mark every seen film gets,
+// whereas watch dates have only just started being logged.
+function randomUnwatched() {
+  try { return localStorage.getItem(LS_UNWATCHED) === '1'; } catch { return false; }
+}
+
+/**
+ * Open a random film from whatever the library is currently showing, so a
+ * genre or decade filter narrows the draw. Never repeats the film on screen
+ * unless it is the only one left.
+ */
+function pickRandom() {
+  let pool = visibleFilms();
+  if (randomUnwatched()) pool = pool.filter((m) => m.rating == null);
+  if (pool.length === 0) { toast('Nothing to pick from.'); return; }
+  const others = pool.filter((m) => m.slug !== current?.film.slug);
+  const choices = others.length ? others : pool;
+  const pick = choices[Math.floor(Math.random() * choices.length)];
+  current = null;
+  openDetail(pick.slug, { random: true });
 }
 
 function closeDetail() {
@@ -944,6 +986,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   el('btn-filters').onclick = () => { state.filtersOpen = !state.filtersOpen; renderFilters(); };
   el('btn-add').onclick = openAdd;
+  el('btn-random').onclick = pickRandom;
   el('search').oninput = (e) => { state.filters.q = e.target.value; renderGrid(); };
 
   if (state.owner && state.repo && state.token) return start();
